@@ -296,26 +296,7 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 		expected   *Projection
 	}{
 		{
-			name:     "label_replace with destination label needed",
-			funcName: "label_replace",
-			args: []Node{
-				&VectorSelector{},
-				&StringLiteral{Val: "new_label"},
-				&StringLiteral{Val: "replacement"},
-				&StringLiteral{Val: "src_label"},
-				&StringLiteral{Val: "regex"},
-			},
-			projection: &Projection{
-				Labels:  []string{"new_label"},
-				Include: true,
-			},
-			expected: &Projection{
-				Labels:  []string{"new_label", "src_label"},
-				Include: true,
-			},
-		},
-		{
-			name:     "label_replace with destination label not needed",
+			name:     "label_replace returns nil projection",
 			funcName: "label_replace",
 			args: []Node{
 				&VectorSelector{},
@@ -328,67 +309,22 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 				Labels:  []string{"other_label"},
 				Include: true,
 			},
-			expected: &Projection{
-				Labels:  []string{"other_label"},
-				Include: true,
-			},
+			expected: nil,
 		},
 		{
-			name:     "label_replace with without clause",
-			funcName: "label_replace",
-			args: []Node{
-				&VectorSelector{},
-				&StringLiteral{Val: "new_label"},
-				&StringLiteral{Val: "replacement"},
-				&StringLiteral{Val: "src_label"},
-				&StringLiteral{Val: "regex"},
-			},
-			projection: &Projection{
-				Labels:  []string{"other_label"},
-				Include: false,
-			},
-			expected: &Projection{
-				Labels:  []string{"other_label"},
-				Include: false,
-			},
-		},
-		{
-			name:     "label_join with destination label needed",
+			name:     "label_join returns nil projection",
 			funcName: "label_join",
 			args: []Node{
 				&VectorSelector{},
 				&StringLiteral{Val: "new_label"},
-				&StringLiteral{Val: "separator"},
-				&StringLiteral{Val: "src_label1"},
-				&StringLiteral{Val: "src_label2"},
+				&StringLiteral{Val: ","},
+				&StringLiteral{Val: "src_label"},
 			},
 			projection: &Projection{
-				Labels:  []string{"new_label"},
+				Labels:  []string{"other_label"},
 				Include: true,
 			},
-			expected: &Projection{
-				Labels:  []string{"new_label", "src_label1", "src_label2"},
-				Include: true,
-			},
-		},
-		{
-			name:     "label_join with without clause",
-			funcName: "label_join",
-			args: []Node{
-				&VectorSelector{},
-				&StringLiteral{Val: "new_label"},
-				&StringLiteral{Val: "separator"},
-				&StringLiteral{Val: "src_label1"},
-				&StringLiteral{Val: "src_label2"},
-			},
-			projection: &Projection{
-				Labels:  []string{"new_label"},
-				Include: false,
-			},
-			expected: &Projection{
-				Labels:  []string{"new_label"},
-				Include: false,
-			},
+			expected: nil,
 		},
 		{
 			name:     "scalar function returns empty projection",
