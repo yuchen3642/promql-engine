@@ -543,6 +543,10 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	defer q.engine.metrics.currentQueries.Dec()
 
 	ctx, cancel := context.WithTimeout(ctx, q.engine.timeout)
+	// Operators can still be reading from storage when Exec returns early,
+	// for example when one operand of a binary operation fails. Cancel them
+	// and wait for them to exit so that they do not outlive the query.
+	defer q.opts.Workers.Wait()
 	defer cancel()
 	q.cancel = cancel
 
@@ -711,7 +715,6 @@ func (q *compatibilityQuery) Stats() *stats.Statistics {
 }
 
 func (q *compatibilityQuery) Close() {
-	q.opts.Workers.Wait()
 	if err := q.scanners.Close(); err != nil {
 		q.engine.logger.Warn("error closing storage scanners, some memory might have leaked", "err", err)
 	}
