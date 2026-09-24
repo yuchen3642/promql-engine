@@ -181,6 +181,11 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	// Initialize iterators lazily per-batch.
 	// TODO: reuse the iterator created for the previous scanner.
 	for i := firstSeries; i < lastInBatch; i++ {
+		if (i-firstSeries)%ctxCheckInterval == 0 {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
+		}
 		if o.scanners[i].iterator == nil {
 			o.scanners[i].iterator = o.scanners[i].rawSeries.Iterator(nil)
 			o.scanners[i].buffer = o.newBuffer(ctx)

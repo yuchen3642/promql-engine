@@ -44,32 +44,38 @@ func TestSelectorsStopReadingOnCancel(t *testing.T) {
 		// cancelDuringLoad cancels the query while series are being loaded
 		// instead of while samples are read in Next.
 		cancelDuringLoad bool
+		// cancelOnIterator also cancels the query when an iterator is created,
+		// not only when samples are read.
+		cancelOnIterator bool
 	}{
 		{name: "vector selector next", newOp: newVectorSelector},
 		{name: "vector selector load", newOp: newVectorSelector, cancelDuringLoad: true},
 		{name: "matrix selector next", newOp: newMatrixSelector},
+		{name: "matrix selector iterator creation", newOp: newMatrixSelector, cancelOnIterator: true},
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			// Once armed, cancel the query as soon as any series is read.
+			// Once armed, cancel the query as soon as any series is used.
 			var armed bool
-			seriesRead := make(map[int]struct{})
+			seriesUsed := make(map[int]struct{})
 			series := make([]SignedSeries, numCancelTestSeries)
 			for i := range series {
-				series[i] = SignedSeries{
-					Series: &readTrackingSeries{
-						Series: storage.NewListSeries(labels.FromStrings("i", strconv.Itoa(i)), chunks.GenerateSamples(0, 100)),
-						onRead: func() {
-							if armed {
-								seriesRead[i] = struct{}{}
-								cancel()
-							}
-						},
-					},
-					Signature: uint64(i),
+				onUse := func() {
+					if armed {
+						seriesUsed[i] = struct{}{}
+						cancel()
+					}
 				}
+				s := &readTrackingSeries{
+					Series: storage.NewListSeries(labels.FromStrings("i", strconv.Itoa(i)), chunks.GenerateSamples(0, 100)),
+					onRead: onUse,
+				}
+				if tcase.cancelOnIterator {
+					s.onIterator = onUse
+				}
+				series[i] = SignedSeries{Series: s, Signature: uint64(i)}
 			}
 
 			op, err := tcase.newOp(staticSeriesSelector(series))
@@ -85,7 +91,7 @@ func TestSelectorsStopReadingOnCancel(t *testing.T) {
 				_, err = op.Next(ctx, make([]model.StepVector, opts.StepsBatch))
 			}
 			require.ErrorIs(t, err, context.Canceled)
-			require.LessOrEqual(t, len(seriesRead), ctxCheckInterval)
+			require.LessOrEqual(t, len(seriesUsed), ctxCheckInterval)
 		})
 	}
 }
@@ -115,9 +121,14 @@ func (staticSeriesSelector) Matchers() []*labels.Matcher { return nil }
 type readTrackingSeries struct {
 	storage.Series
 	onRead func()
+	// onIterator is called when an iterator is created, if set.
+	onIterator func()
 }
 
 func (s *readTrackingSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	if s.onIterator != nil {
+		s.onIterator()
+	}
 	return &readTrackingIterator{Iterator: s.Series.Iterator(it), onRead: s.onRead}
 }
 
