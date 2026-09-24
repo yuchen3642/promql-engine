@@ -133,7 +133,7 @@ func (p ProjectionOptimizer) pushProjection(node *Node, projection *Projection) 
 
 	case *FunctionCall:
 		// Handle function-specific label requirements.
-		updatedProjection := getFunctionLabelRequirements(n.Func.Name, n.Args, projection)
+		updatedProjection := getFunctionLabelRequirements(n.Func.Name, projection)
 		for _, child := range n.Children() {
 			p.pushProjection(child, updatedProjection)
 		}
@@ -169,7 +169,7 @@ func matchesSingleMetricName(matchers []*labels.Matcher) bool {
 }
 
 // getFunctionLabelRequirements returns an updated projection based on function-specific requirements.
-func getFunctionLabelRequirements(funcName string, args []Node, projection *Projection) *Projection {
+func getFunctionLabelRequirements(funcName string, projection *Projection) *Projection {
 	if projection == nil {
 		projection = &Projection{}
 	}
