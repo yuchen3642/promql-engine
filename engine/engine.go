@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution"
@@ -447,6 +448,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
 		SampleTracker:            query.NewSampleTracker(e.maxSamplesPerQuery),
+		Workers:                  &sync.WaitGroup{},
 	}
 
 	if opts == nil {
@@ -709,6 +711,7 @@ func (q *compatibilityQuery) Stats() *stats.Statistics {
 }
 
 func (q *compatibilityQuery) Close() {
+	q.opts.Workers.Wait()
 	if err := q.scanners.Close(); err != nil {
 		q.engine.logger.Warn("error closing storage scanners, some memory might have leaked", "err", err)
 	}

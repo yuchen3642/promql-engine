@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -7129,4 +7130,58 @@ func TestInstantQueryPerSeriesReleasePreventMaxSamplesFailure(t *testing.T) {
 			require.NoError(t, res.Err, "query should succeed with per-series ring buffer reset: %s", tc.query)
 		})
 	}
+}
+
+type closeTrackingQuerier struct {
+	storage.MockQuerier
+	closed *atomic.Bool
+}
+
+func (q *closeTrackingQuerier) Close() error { q.closed.Store(true); return nil }
+
+type closeTrackingIterator struct {
+	slowIterator
+	closed, usedAfterClose *atomic.Bool
+}
+
+func (it *closeTrackingIterator) Next() chunkenc.ValueType {
+	it.usedAfterClose.CompareAndSwap(false, it.closed.Load())
+	return it.slowIterator.Next()
+}
+
+func (it *closeTrackingIterator) Seek(t int64) chunkenc.ValueType {
+	it.usedAfterClose.CompareAndSwap(false, it.closed.Load())
+	return it.slowIterator.Seek(t)
+}
+
+type errIterator struct{ chunkenc.Iterator }
+
+func (errIterator) Next() chunkenc.ValueType      { return chunkenc.ValNone }
+func (errIterator) Seek(int64) chunkenc.ValueType { return chunkenc.ValNone }
+func (errIterator) Err() error                    { return errors.New("boom") }
+
+func TestQueryCloseWaitsForConcurrentOperators(t *testing.T) {
+	t.Parallel()
+
+	var closed, usedAfterClose atomic.Bool
+	querier := &closeTrackingQuerier{closed: &closed}
+	querier.SelectMockFunction = func(_ bool, _ *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
+		it := chunkenc.Iterator(&closeTrackingIterator{closed: &closed, usedAfterClose: &usedAfterClose})
+		if ms[0].Value == "bar" {
+			it = errIterator{}
+		}
+		return newTestSeriesSet(&storage.SeriesEntry{
+			Lset:             labels.FromStrings(labels.MetricName, ms[0].Value),
+			SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator { return it },
+		})
+	}
+	queryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) { return querier, nil })
+
+	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: time.Hour}})
+	q, err := ng.NewRangeQuery(context.Background(), queryable, nil, "sum(foo) + sum(bar)", time.Unix(0, 0), time.Unix(3600, 0), 30*time.Second)
+	testutil.Ok(t, err)
+	testutil.NotOk(t, q.Exec(context.Background()).Err)
+	q.Close()
+	time.Sleep(100 * time.Millisecond)
+	testutil.Assert(t, !usedAfterClose.Load(), "storage was used after the query was closed")
 }

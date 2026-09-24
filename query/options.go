@@ -4,6 +4,7 @@
 package query
 
 import (
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,9 @@ type Options struct {
 	EnableAnalysis           bool
 	DecodingConcurrency      int
 	SampleTracker            SampleTracker // Tracks current samples in memory
+	// Workers tracks goroutines started by operators of the query, so that
+	// storage is not closed while they still read from it.
+	Workers *sync.WaitGroup
 }
 
 // TotalSteps returns the total number of steps in the query, regardless of batching.

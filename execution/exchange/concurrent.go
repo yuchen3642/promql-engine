@@ -92,6 +92,9 @@ func (c *concurrencyOperator) Next(ctx context.Context, buf []model.StepVector) 
 	})
 
 	c.once.Do(func() {
+		if c.opts.Workers != nil {
+			c.opts.Workers.Add(1)
+		}
 		go c.pull(ctx)
 		go c.drainBufferOnCancel(ctx)
 	})
@@ -119,6 +122,9 @@ func (c *concurrencyOperator) Next(ctx context.Context, buf []model.StepVector) 
 }
 
 func (c *concurrencyOperator) pull(ctx context.Context) {
+	if c.opts.Workers != nil {
+		defer c.opts.Workers.Done()
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			c.buffer <- maybeStepVector{err: errors.Newf("unexpected panic: %v", r)}
